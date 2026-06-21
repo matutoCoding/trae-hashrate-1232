@@ -1,0 +1,101 @@
+======================================================================
+       共享文件夹权限审计报告
+       生成时间: 2026-06-22 01:44:45
+======================================================================
+
+扫描统计: HIGH=3  MEDIUM=6  LOW=0
+
+----------------------------------------------------------------------
+ 问题清单
+----------------------------------------------------------------------
+
+  1. [HIGH]  任何人可访问  (R001)
+     位置: /teams/engineering  (研发团队空间)
+     成员: anyone  权限=view  转分享=是
+     描述: 对象对任何人开放【view】权限
+     建议: 立即关闭公开访问，改为指定内部用户或设置访问白名单
+     复查: share-audit scan "https://drive.example.com/s/eng-public"
+
+  2. [HIGH]  外部用户可编辑  (R002)
+     位置: /teams/engineering/algorithm-core  (核心算法项目)
+     成员: consultant@external-vendor.com  权限=edit  转分享=否
+     描述: 外部用户 consultant@external-vendor.com 拥有【edit】权限
+     建议: 降为查看权限或移除用户，必要时设定期限并开启二次验证
+     复查: share-audit scan "https://drive.example.com/s/algo-core"
+
+  3. [HIGH]  任何人可访问  (R001)
+     位置: /teams/legal/contracts  (客户合同档案)
+     成员: anyone  权限=view  转分享=否
+     描述: 对象对任何人开放【view】权限
+     建议: 立即关闭公开访问，改为指定内部用户或设置访问白名单
+     复查: share-audit scan "https://drive.example.com/s/customer-contracts"
+
+  4. [MEDIUM]  权限未设到期时间  (R003)
+     位置: /teams/engineering  (研发团队空间)
+     成员: eng@company.com  权限=edit  转分享=是
+     描述: 用户 eng@company.com 的【edit】权限无到期时间
+     建议: 根据项目周期设置合理的到期时间，例如 90 天内
+     复查: share-audit scan "https://drive.example.com/s/eng-public"
+
+  5. [MEDIUM]  允许转分享  (R004)
+     位置: /teams/engineering  (研发团队空间)
+     成员: anyone  权限=view  转分享=是
+     描述: anyone 拥有【view】且允许转分享
+     建议: 关闭转分享权限，防止权限扩散
+     复查: share-audit scan "https://drive.example.com/s/eng-public"
+
+  6. [MEDIUM]  权限未设到期时间  (R003)
+     位置: /teams/engineering/algorithm-core  (核心算法项目)
+     成员: zhang.eng@company.com  权限=owner  转分享=是
+     描述: 用户 zhang.eng@company.com 的【owner】权限无到期时间
+     建议: 根据项目周期设置合理的到期时间，例如 90 天内
+     复查: share-audit scan "https://drive.example.com/s/algo-core"
+
+  7. [MEDIUM]  权限未设到期时间  (R003)
+     位置: /teams/engineering/algorithm-core  (核心算法项目)
+     成员: consultant@external-vendor.com  权限=edit  转分享=否
+     描述: 用户 consultant@external-vendor.com 的【edit】权限无到期时间
+     建议: 根据项目周期设置合理的到期时间，例如 90 天内
+     复查: share-audit scan "https://drive.example.com/s/algo-core"
+
+  8. [MEDIUM]  权限未设到期时间  (R003)
+     位置: /teams/legal/contracts  (客户合同档案)
+     成员: legal@company.com  权限=edit  转分享=是
+     描述: 用户 legal@company.com 的【edit】权限无到期时间
+     建议: 根据项目周期设置合理的到期时间，例如 90 天内
+     复查: share-audit scan "https://drive.example.com/s/customer-contracts"
+
+  9. [MEDIUM]  权限未设到期时间  (R003)
+     位置: /teams/legal/contracts  (客户合同档案)
+     成员: auditor@thirdparty.cn  权限=view  转分享=否
+     描述: 用户 auditor@thirdparty.cn 的【view】权限无到期时间
+     建议: 根据项目周期设置合理的到期时间，例如 90 天内
+     复查: share-audit scan "https://drive.example.com/s/customer-contracts"
+
+----------------------------------------------------------------------
+ 处理建议总览
+----------------------------------------------------------------------
+
+ • 任何人可访问 (R001) — 共 2 处
+   建议: 立即关闭公开访问，改为指定内部用户或设置访问白名单
+
+ • 外部用户可编辑 (R002) — 共 1 处
+   建议: 降为查看权限或移除用户，必要时设定期限并开启二次验证
+
+ • 权限未设到期时间 (R003) — 共 5 处
+   建议: 根据项目周期设置合理的到期时间，例如 90 天内
+
+ • 允许转分享 (R004) — 共 1 处
+   建议: 关闭转分享权限，防止权限扩散
+
+----------------------------------------------------------------------
+ 复查命令清单
+----------------------------------------------------------------------
+
+   share-audit scan "https://drive.example.com/s/eng-public"
+   share-audit scan "https://drive.example.com/s/algo-core"
+   share-audit scan "https://drive.example.com/s/customer-contracts"
+
+======================================================================
+  报告结束 — 请根据上述建议登录云盘后台手动调整权限
+======================================================================

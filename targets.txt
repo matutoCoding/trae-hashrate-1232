@@ -1,0 +1,15 @@
+# 共享文件夹权限审计 - 每周巡检目标清单
+# 每行一个目标，支持：团队空间路径、文件夹路径、共享链接
+# 以 # 开头的行为注释
+
+# === 研发团队 ===
+/teams/engineering
+/teams/engineering/algorithm-core
+/teams/engineering/product-docs
+
+# === 法务团队 ===
+/teams/legal/contracts
+
+# === 共享链接 ===
+https://drive.example.com/s/eng-public
+https://drive.example.com/s/fin-q2-draft
