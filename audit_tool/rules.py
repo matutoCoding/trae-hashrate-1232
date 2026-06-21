@@ -36,8 +36,6 @@ def _base_violation(
     else:
         recheck_target = item.link if item.link else item.path
 
-    recheck_cmd = f"share-audit scan \"{recheck_target}\""
-
     return RuleViolation(
         rule_id=rule_id,
         rule_name=rule_name,
@@ -46,7 +44,7 @@ def _base_violation(
         item_path=item.path,
         description=description,
         suggestion=suggestion,
-        recheck_cmd=recheck_cmd,
+        recheck_cmd=str(recheck_target),
         member=member,
     )
 

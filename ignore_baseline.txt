@@ -1,0 +1,19 @@
+# 共享权限巡检基线忽略白名单
+# 每行一个匹配规则，支持以下格式（不区分大小写）：
+#   1. 规则ID：          R004               → 忽略所有该规则的违规
+#   2. 路径：            /spaces/marketing   → 忽略该路径下所有违规
+#   3. 邮箱：            consultant@external → 忽略该成员的所有违规
+#   4. 组合（推荐）：    R003:/spaces/marketing/campaigns/q3-2026:design@acme-corp.com
+#                        规则ID:路径:邮箱    → 精确忽略指定场景
+#                        R003:/spaces/marketing
+#                        规则ID:路径         → 忽略该路径下指定规则的所有违规
+# 以 # 开头的行为注释
+
+# 已批准的外部媒体代理临时合作，忽略其转分享权限
+R004:media-partner@4a-agency.cn
+
+# 设计组的评论权限是长期需要的，已在安全例会报备，忽略未设置到期提醒
+R003:/spaces/marketing/campaigns/q3-2026:design@acme-corp.com
+
+# 研发全员组长期存在，忽略未设置到期提醒（由HR系统同步离职自动清理）
+R003:rnd-all@acme-corp.com

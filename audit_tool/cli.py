@@ -1,4 +1,7 @@
 import argparse
+import csv
+import json
+import os
 import sys
 from datetime import datetime
 from typing import List, Optional
@@ -172,8 +175,26 @@ def _build_parser() -> argparse.ArgumentParser:
         help="递归扫描子目录",
     )
     scan_parser.add_argument(
+        "-s", "--severity",
+        action="append",
+        default=None,
+        help="按严重级别筛选，可多次指定，例如 -s HIGH -s MEDIUM",
+    )
+    scan_parser.add_argument(
+        "-i", "--ignore",
+        help="基线忽略白名单文件路径，每行一个匹配规则",
+    )
+    scan_parser.add_argument(
         "-o", "--report",
         help="输出文本报告到指定文件",
+    )
+    scan_parser.add_argument(
+        "--json-out",
+        help="导出机器可读结果到 JSON 文件",
+    )
+    scan_parser.add_argument(
+        "--csv-out",
+        help="导出机器可读结果到 CSV 文件",
     )
     scan_parser.add_argument(
         "--no-color",
@@ -205,8 +226,32 @@ def _build_parser() -> argparse.ArgumentParser:
         help="公司内网域名，用于自动识别外部邮箱，可多次指定",
     )
     demo_parser.add_argument(
+        "-r", "--recursive",
+        action="store_true",
+        default=True,
+        help=argparse.SUPPRESS,
+    )
+    demo_parser.add_argument(
+        "-s", "--severity",
+        action="append",
+        default=None,
+        help="按严重级别筛选，可多次指定",
+    )
+    demo_parser.add_argument(
+        "-i", "--ignore",
+        help="基线忽略白名单文件路径",
+    )
+    demo_parser.add_argument(
         "-o", "--report",
         help="输出文本报告到指定文件",
+    )
+    demo_parser.add_argument(
+        "--json-out",
+        help="导出机器可读结果到 JSON 文件",
+    )
+    demo_parser.add_argument(
+        "--csv-out",
+        help="导出机器可读结果到 CSV 文件",
     )
 
     return parser
@@ -248,12 +293,277 @@ def _build_provider(data_file: Optional[str], domains: Optional[List[str]]) -> D
     return MockDataProvider()
 
 
+def _build_recheck_cmd(
+    target: str,
+    data_file: Optional[str],
+    domains: Optional[List[str]],
+    recursive: bool,
+    severity_filter: Optional[List[str]],
+    ignore_file: Optional[str],
+) -> str:
+    parts = ["share-audit", "scan"]
+    if data_file:
+        parts.extend(["-d", _shell_quote(data_file)])
+    if domains:
+        for d in domains:
+            parts.extend(["--domain", d])
+    if recursive:
+        parts.append("-r")
+    if severity_filter:
+        for s in severity_filter:
+            parts.extend(["-s", s])
+    if ignore_file:
+        parts.extend(["-i", _shell_quote(ignore_file)])
+    parts.append(_shell_quote(target))
+    return " ".join(parts)
+
+
+def _shell_quote(s: str) -> str:
+    if " " in s or '"' in s or "'" in s:
+        return '"' + s.replace('"', '\\"') + '"'
+    return s
+
+
+def _member_to_dict(member: Member) -> dict:
+    return {
+        "name": member.name,
+        "email": member.email,
+        "member_type": member.member_type.value,
+        "permission": member.permission.value,
+        "can_reshare": member.can_reshare,
+        "expiry": member.expiry.strftime("%Y-%m-%d %H:%M:%S") if member.expiry else None,
+    }
+
+
+def _item_to_dict(item: SharedItem, violations: List[RuleViolation], ignored: List[RuleViolation]) -> dict:
+    item_violations = [v for v in violations if v.item_path == item.path]
+    item_ignored = [v for v in ignored if v.item_path == item.path]
+    member_dicts = []
+    for m in item.members:
+        mv = [v for v in item_violations if v.member and v.member.email == m.email]
+        mi = [v for v in item_ignored if v.member and v.member.email == m.email]
+        md = _member_to_dict(m)
+        md["violations"] = [
+            {"rule_id": v.rule_id, "rule_name": v.rule_name, "severity": v.severity.value, "ignored": False}
+            for v in mv
+        ]
+        md["violations"].extend([
+            {"rule_id": v.rule_id, "rule_name": v.rule_name, "severity": v.severity.value, "ignored": True}
+            for v in mi
+        ])
+        member_dicts.append(md)
+    return {
+        "id": item.id,
+        "name": item.name,
+        "path": item.path,
+        "item_type": item.item_type,
+        "link": item.link,
+        "members": member_dicts,
+        "violation_count": len(item_violations),
+        "ignored_count": len(item_ignored),
+    }
+
+
+def _violation_to_dict(v: RuleViolation, ignored: bool = False) -> dict:
+    return {
+        "rule_id": v.rule_id,
+        "rule_name": v.rule_name,
+        "severity": v.severity.value,
+        "item_name": v.item_name,
+        "item_path": v.item_path,
+        "member_email": v.member.email if v.member else None,
+        "member_permission": v.member.permission.value if v.member else None,
+        "description": v.description,
+        "suggestion": v.suggestion,
+        "recheck_cmd": v.recheck_cmd,
+        "ignored": ignored,
+    }
+
+
+def _write_json_output(
+    path: str,
+    items: List[SharedItem],
+    violations: List[RuleViolation],
+    ignored_violations: List[RuleViolation],
+    not_found: List[str],
+    errors: List[str],
+    data_file: Optional[str],
+    domains: Optional[List[str]],
+    severity_filter: Optional[List[str]],
+) -> None:
+    data = {
+        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "data_source": data_file,
+        "company_domains": domains or [],
+        "severity_filter": severity_filter or [],
+        "summary": {
+            "total_items": len(items),
+            "active_violations": len(violations),
+            "ignored_violations": len(ignored_violations),
+            "high": sum(1 for v in violations if v.severity == Severity.HIGH),
+            "medium": sum(1 for v in violations if v.severity == Severity.MEDIUM),
+            "low": sum(1 for v in violations if v.severity == Severity.LOW),
+            "not_found_targets": len(not_found),
+            "errors": len(errors),
+        },
+        "items": [_item_to_dict(item, violations, ignored_violations) for item in items],
+        "violations": [_violation_to_dict(v, False) for v in violations],
+        "ignored_violations": [_violation_to_dict(v, True) for v in ignored_violations],
+        "not_found_targets": not_found,
+        "errors": errors,
+    }
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def _write_csv_output(
+    path: str,
+    items: List[SharedItem],
+    violations: List[RuleViolation],
+    ignored_violations: List[RuleViolation],
+    not_found: List[str],
+    errors: List[str],
+) -> None:
+    rows = []
+    for v in violations:
+        rows.append({
+            "type": "violation",
+            "severity": v.severity.value,
+            "rule_id": v.rule_id,
+            "rule_name": v.rule_name,
+            "item_path": v.item_path,
+            "item_name": v.item_name,
+            "member_email": v.member.email if v.member else "",
+            "member_permission": v.member.permission.value if v.member else "",
+            "description": v.description,
+            "suggestion": v.suggestion,
+            "recheck_cmd": v.recheck_cmd,
+            "ignored": "false",
+        })
+    for v in ignored_violations:
+        rows.append({
+            "type": "violation",
+            "severity": v.severity.value,
+            "rule_id": v.rule_id,
+            "rule_name": v.rule_name,
+            "item_path": v.item_path,
+            "item_name": v.item_name,
+            "member_email": v.member.email if v.member else "",
+            "member_permission": v.member.permission.value if v.member else "",
+            "description": v.description,
+            "suggestion": v.suggestion,
+            "recheck_cmd": v.recheck_cmd,
+            "ignored": "true",
+        })
+    for nf in not_found:
+        rows.append({
+            "type": "not_found",
+            "severity": "",
+            "rule_id": "",
+            "rule_name": "",
+            "item_path": nf,
+            "item_name": "",
+            "member_email": "",
+            "member_permission": "",
+            "description": "未在数据源中找到该目标",
+            "suggestion": "核对路径/链接拼写或重新导出数据源",
+            "recheck_cmd": "",
+            "ignored": "",
+        })
+    for e in errors:
+        rows.append({
+            "type": "error",
+            "severity": "",
+            "rule_id": "",
+            "rule_name": "",
+            "item_path": "",
+            "item_name": "",
+            "member_email": "",
+            "member_permission": "",
+            "description": e,
+            "suggestion": "",
+            "recheck_cmd": "",
+            "ignored": "",
+        })
+    fieldnames = [
+        "type", "severity", "rule_id", "rule_name", "item_path", "item_name",
+        "member_email", "member_permission", "description", "suggestion", "recheck_cmd", "ignored",
+    ]
+    with open(path, "w", encoding="utf-8-sig", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def _parse_ignore_file(ignore_file: Optional[str]) -> List[str]:
+    if not ignore_file:
+        return []
+    if not os.path.exists(ignore_file):
+        return []
+    patterns: List[str] = []
+    with open(ignore_file, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#"):
+                patterns.append(line.lower())
+    return patterns
+
+
+def _is_ignored(violation: RuleViolation, ignore_patterns: List[str]) -> bool:
+    if not ignore_patterns:
+        return False
+    key_items = [
+        violation.item_path.lower(),
+        violation.rule_id.lower(),
+        violation.member.email.lower() if violation.member else "",
+        f"{violation.rule_id}:{violation.item_path}".lower(),
+        f"{violation.rule_id}:{violation.member.email}".lower() if violation.member else "",
+    ]
+    if violation.member:
+        key_items.append(f"{violation.item_path}:{violation.member.email}".lower())
+        key_items.append(f"{violation.rule_id}:{violation.item_path}:{violation.member.email}".lower())
+    for pattern in ignore_patterns:
+        for key in key_items:
+            if pattern in key:
+                return True
+    return False
+
+
+def _filter_by_severity(
+    violations: List[RuleViolation],
+    severity_filter: Optional[List[str]],
+) -> List[RuleViolation]:
+    if not severity_filter:
+        return violations
+    allowed = {s.upper() for s in severity_filter}
+    return [v for v in violations if v.severity.value.upper() in allowed]
+
+
+def _finalize_violations(
+    violations: List[RuleViolation],
+    data_file: Optional[str],
+    domains: Optional[List[str]],
+    recursive: bool,
+    severity_filter: Optional[List[str]],
+    ignore_file: Optional[str],
+) -> None:
+    for v in violations:
+        v.recheck_cmd = _build_recheck_cmd(
+            v.recheck_cmd, data_file, domains, recursive, severity_filter, ignore_file
+        )
+
+
 def _run_audit(
     targets: List[ScanTarget],
     provider: DataProvider,
     recursive: bool,
     report_path: Optional[str],
     company_domains: Optional[List[str]] = None,
+    data_file: Optional[str] = None,
+    severity_filter: Optional[List[str]] = None,
+    ignore_file: Optional[str] = None,
+    json_out: Optional[str] = None,
+    csv_out: Optional[str] = None,
 ) -> int:
     scanner = Scanner(provider, recursive=recursive)
     scan_results = scanner.scan(targets)
@@ -275,6 +585,8 @@ def _run_audit(
         all_errors.extend(sr.errors)
         all_not_found.extend(sr.not_found)
 
+    ignore_patterns = _parse_ignore_file(ignore_file)
+
     total_targets = len(targets)
     matched_targets = total_targets - len(all_errors) - len(all_not_found)
     provider_name = getattr(provider, "file_path", "(内置演示数据)")
@@ -282,6 +594,10 @@ def _run_audit(
     print()
     print(f"  {Fore.BLUE}数据源:{Style.RESET_ALL} {provider_name}  共 {item_count} 个共享对象")
     print(f"  {Fore.BLUE}扫描目标:{Style.RESET_ALL} {total_targets} 个  命中 {matched_targets}  未找到 {len(all_not_found)}  错误 {len(all_errors)}")
+    if severity_filter:
+        print(f"  {Fore.BLUE}级别筛选:{Style.RESET_ALL} {', '.join(severity_filter)}")
+    if ignore_patterns:
+        print(f"  {Fore.BLUE}忽略白名单:{Style.RESET_ALL} {len(ignore_patterns)} 条规则")
 
     if all_errors:
         print()
@@ -301,21 +617,63 @@ def _run_audit(
 
     all_violations = rule_engine.check(all_items)
 
+    ignored_violations: List[RuleViolation] = []
+    active_violations: List[RuleViolation] = []
+    for v in all_violations:
+        if _is_ignored(v, ignore_patterns):
+            ignored_violations.append(v)
+        else:
+            active_violations.append(v)
+
+    filtered_violations = _filter_by_severity(active_violations, severity_filter)
+
+    _finalize_violations(filtered_violations, data_file, company_domains, recursive, severity_filter, ignore_file)
+    _finalize_violations(ignored_violations, data_file, company_domains, recursive, severity_filter, ignore_file)
+
     seen_paths = set()
     for item in all_items:
         if item.path not in seen_paths:
-            _print_item_table(item, all_violations)
+            _print_item_table(item, filtered_violations + ignored_violations)
             seen_paths.add(item.path)
 
-    _print_violation_summary(all_violations)
+    if ignored_violations:
+        print()
+        print(f"  {Fore.CYAN}[已忽略]{Style.RESET_ALL} 基线白名单命中 {len(ignored_violations)} 条：")
+        seen_ignored = set()
+        for v in ignored_violations:
+            key = f"{v.item_path}:{v.rule_id}:{v.member.email if v.member else ''}"
+            if key not in seen_ignored:
+                seen_ignored.add(key)
+                print(f"    • {v.item_path} | {v.rule_name} | {v.member.email if v.member else ''}")
+                seen_ignored.add(key)
+
+    _print_violation_summary(filtered_violations)
 
     if report_path:
         rep = ReportGenerator()
-        rep.generate(all_violations, output_path=report_path)
+        rep.generate(
+            filtered_violations,
+            output_path=report_path,
+            ignored_violations=ignored_violations,
+            not_found_targets=all_not_found,
+        )
         print()
         print(f"  {Fore.GREEN}文本报告已生成: {report_path}{Style.RESET_ALL}")
 
-    high_count = sum(1 for v in all_violations if v.severity == Severity.HIGH)
+    if json_out:
+        _write_json_output(
+            json_out, all_items, filtered_violations, ignored_violations, all_not_found, all_errors,
+            data_file, company_domains, severity_filter
+        )
+        print(f"  {Fore.GREEN}JSON 结果已导出: {json_out}{Style.RESET_ALL}")
+
+    if csv_out:
+        _write_csv_output(
+            csv_out, all_items, filtered_violations, ignored_violations, all_not_found, all_errors
+        )
+        print(f"  {Fore.GREEN}CSV 结果已导出: {csv_out}{Style.RESET_ALL}")
+
+    high_count = sum(1 for v in filtered_violations if v.severity == Severity.HIGH)
     return 1 if high_count > 0 else 0
 
 
@@ -338,7 +696,18 @@ def _cmd_scan(args: argparse.Namespace):
         print(f"{Fore.RED}数据源加载失败: {exc}{Style.RESET_ALL}")
         return 2
 
-    return _run_audit(targets, provider, args.recursive, args.report, company_domains=args.domain)
+    return _run_audit(
+        targets,
+        provider,
+        args.recursive,
+        args.report,
+        company_domains=args.domain,
+        data_file=args.data,
+        severity_filter=args.severity,
+        ignore_file=args.ignore,
+        json_out=args.json_out,
+        csv_out=args.csv_out,
+    )
 
 
 def _cmd_demo(args: argparse.Namespace):
@@ -362,7 +731,18 @@ def _cmd_demo(args: argparse.Namespace):
         print(f"{Fore.RED}数据源加载失败: {exc}{Style.RESET_ALL}")
         return 2
 
-    return _run_audit(targets, provider, recursive=True, report_path=args.report, company_domains=args.domain)
+    return _run_audit(
+        targets,
+        provider,
+        recursive=True,
+        report_path=args.report,
+        company_domains=args.domain,
+        data_file=args.data,
+        severity_filter=args.severity,
+        ignore_file=args.ignore,
+        json_out=args.json_out,
+        csv_out=args.csv_out,
+    )
 
 
 def audit_main(argv: Optional[List[str]] = None) -> int:

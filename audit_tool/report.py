@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 
 from .models import RuleViolation, Severity
 
@@ -8,14 +8,29 @@ class ReportGenerator:
     def __init__(self):
         self.timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    def generate(self, violations: List[RuleViolation], output_path: str = None) -> str:
-        report = self._build_text(violations)
+    def generate(
+        self,
+        violations: List[RuleViolation],
+        output_path: Optional[str] = None,
+        ignored_violations: Optional[List[RuleViolation]] = None,
+        not_found_targets: Optional[List[str]] = None,
+    ) -> str:
+        report = self._build_text(
+            violations,
+            ignored_violations=ignored_violations or [],
+            not_found_targets=not_found_targets or [],
+        )
         if output_path:
             with open(output_path, "w", encoding="utf-8") as f:
                 f.write(report)
         return report
 
-    def _build_text(self, violations: List[RuleViolation]) -> str:
+    def _build_text(
+        self,
+        violations: List[RuleViolation],
+        ignored_violations: List[RuleViolation],
+        not_found_targets: List[str],
+    ) -> str:
         lines: List[str] = []
 
         lines.append("=" * 70)
@@ -24,8 +39,22 @@ class ReportGenerator:
         lines.append("=" * 70)
         lines.append("")
 
+        if not_found_targets:
+            lines.append(f"未找到目标: {len(not_found_targets)} 个（详见末尾）")
+            lines.append("")
+
+        if ignored_violations:
+            lines.append(f"基线白名单已忽略: {len(ignored_violations)} 条（详见末尾）")
+            lines.append("")
+
         if not violations:
             lines.append("[✓] 未发现违规权限配置。")
+            lines.append("")
+            self._append_not_found_section(lines, not_found_targets)
+            self._append_ignored_section(lines, ignored_violations)
+            lines.append("=" * 70)
+            lines.append("  报告结束 — 请根据上述建议登录云盘后台手动调整权限")
+            lines.append("=" * 70)
             lines.append("")
             return "\n".join(lines)
 
@@ -33,7 +62,7 @@ class ReportGenerator:
         medium = [v for v in violations if v.severity == Severity.MEDIUM]
         low = [v for v in violations if v.severity == Severity.LOW]
 
-        lines.append(f"扫描统计: HIGH={len(high)}  MEDIUM={len(medium)}  LOW={len(low)}")
+        lines.append(f"扫描统计: HIGH={len(high)}  MEDIUM={len(medium)}  LOW={len(low)}  已忽略={len(ignored_violations)}")
         lines.append("")
         lines.append("-" * 70)
         lines.append(" 问题清单")
@@ -77,7 +106,7 @@ class ReportGenerator:
             lines.append("")
 
         lines.append("-" * 70)
-        lines.append(" 复查命令清单")
+        lines.append(" 复查命令清单（复制即可执行）")
         lines.append("-" * 70)
         lines.append("")
 
@@ -87,6 +116,9 @@ class ReportGenerator:
                 lines.append(f"   {v.recheck_cmd}")
                 seen_cmds.add(v.recheck_cmd)
 
+        self._append_not_found_section(lines, not_found_targets)
+        self._append_ignored_section(lines, ignored_violations)
+
         lines.append("")
         lines.append("=" * 70)
         lines.append("  报告结束 — 请根据上述建议登录云盘后台手动调整权限")
@@ -94,3 +126,36 @@ class ReportGenerator:
         lines.append("")
 
         return "\n".join(lines)
+
+    def _append_not_found_section(self, lines: List[str], not_found: List[str]) -> None:
+        if not not_found:
+            return
+        lines.append("")
+        lines.append("-" * 70)
+        lines.append(f" 未找到目标（{len(not_found)} 个）")
+        lines.append("-" * 70)
+        lines.append("")
+        for nf in not_found:
+            lines.append(f"   • {nf}")
+        lines.append("")
+        lines.append("   建议：核对路径/链接拼写是否正确，或重新导出数据源。")
+
+    def _append_ignored_section(self, lines: List[str], ignored: List[RuleViolation]) -> None:
+        if not ignored:
+            return
+        lines.append("")
+        lines.append("-" * 70)
+        lines.append(f" 基线白名单已忽略（{len(ignored)} 条）")
+        lines.append("-" * 70)
+        lines.append("")
+
+        seen = set()
+        for v in ignored:
+            key = f"{v.rule_id}:{v.item_path}:{v.member.email if v.member else ''}"
+            if key in seen:
+                continue
+            seen.add(key)
+            member_info = f" | 成员: {v.member.email}" if v.member else ""
+            lines.append(f"   • [{v.severity.value}] {v.rule_name} | {v.item_path}{member_info}")
+        lines.append("")
+        lines.append("   说明：以上条目已在白名单中批准，本次扫描暂不处理。")
