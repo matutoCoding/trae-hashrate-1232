@@ -1,0 +1,87 @@
+======================================================================
+       共享权限巡检趋势对比报告
+       生成时间: 2026-06-22 02:19:53
+======================================================================
+
+  旧扫描: scan_last_week.json  (2026-06-22 02:19:29)
+  新扫描: scan_this_week.json  (2026-06-22 02:19:38)
+
+----------------------------------------------------------------------
+ 变化汇总
+----------------------------------------------------------------------
+
+   新增风险:   HIGH=1  MEDIUM=1  LOW=0  TOTAL=2
+   已修复:     HIGH=1  MEDIUM=4  LOW=0  TOTAL=5
+   仍存在:     HIGH=1  MEDIUM=3  LOW=0  TOTAL=4
+
+----------------------------------------------------------------------
+ 新增风险（2 条）
+----------------------------------------------------------------------
+
+  +   1. [HIGH] 外部用户可编辑  (R002)
+        位置: /spaces/marketing/campaigns/q3-2026  (2026 Q3 市场投放方案)
+        成员: vendor@new-partner.com
+        描述: 外部用户 vendor@new-partner.com 拥有【edit】权限
+
+  +   2. [MEDIUM] 权限未设到期时间  (R003)
+        位置: /spaces/marketing/campaigns/q3-2026  (2026 Q3 市场投放方案)
+        成员: vendor@new-partner.com
+        描述: 用户 vendor@new-partner.com 的【edit】权限无到期时间
+
+----------------------------------------------------------------------
+ 已修复（5 条）
+----------------------------------------------------------------------
+
+  -   1. [HIGH] 外部用户可编辑  (R002)
+        位置: /spaces/rnd/projects/secret-algo  (核心算法源码仓库)
+        成员: tom.consultant@external-ai-lab.com
+        原描述: 外部用户 tom.consultant@external-ai-lab.com 拥有【edit】权限
+
+  -   2. [MEDIUM] 权限未设到期时间  (R003)
+        位置: /spaces/rnd-public  (研发部公共资料)
+        成员: rnd-all@acme-corp.com
+        原描述: 用户 rnd-all@acme-corp.com 的【edit】权限无到期时间
+
+  -   3. [MEDIUM] 允许转分享  (R004)
+        位置: /spaces/rnd-public  (研发部公共资料)
+        成员: anyone
+        原描述: anyone 拥有【view】且允许转分享
+
+  -   4. [MEDIUM] 权限未设到期时间  (R003)
+        位置: /spaces/rnd/projects/secret-algo  (核心算法源码仓库)
+        成员: tom.consultant@external-ai-lab.com
+        原描述: 用户 tom.consultant@external-ai-lab.com 的【edit】权限无到期时间
+
+  -   5. [MEDIUM] 权限未设到期时间  (R003)
+        位置: /spaces/rnd/projects/secret-algo  (核心算法源码仓库)
+        成员: wang.alg@acme-corp.com
+        原描述: 用户 wang.alg@acme-corp.com 的【owner】权限无到期时间
+
+----------------------------------------------------------------------
+ 仍存在（4 条）
+----------------------------------------------------------------------
+
+  •   1. [HIGH] 任何人可访问  (R001)
+        位置: /spaces/rnd-public  (研发部公共资料)
+        成员: anyone
+        描述: 对象对任何人开放【view】权限
+
+  •   2. [MEDIUM] 允许转分享  (R004)
+        位置: /spaces/marketing/campaigns/q3-2026  (2026 Q3 市场投放方案)
+        成员: media-partner@4a-agency.cn
+        描述: media-partner@4a-agency.cn 拥有【view】且允许转分享
+
+  •   3. [MEDIUM] 权限未设到期时间  (R003)
+        位置: /spaces/marketing/campaigns/q3-2026  (2026 Q3 市场投放方案)
+        成员: media-partner@4a-agency.cn
+        描述: 用户 media-partner@4a-agency.cn 的【view】权限无到期时间
+
+  •   4. [MEDIUM] 权限未设到期时间  (R003)
+        位置: /spaces/marketing/campaigns/q3-2026  (2026 Q3 市场投放方案)
+        成员: design@acme-corp.com
+        描述: 用户 design@acme-corp.com 的【comment】权限无到期时间
+
+
+======================================================================
+  报告结束 — 请重点关注新增风险并确认已修复项
+======================================================================

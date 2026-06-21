@@ -197,6 +197,10 @@ def _build_parser() -> argparse.ArgumentParser:
         help="导出机器可读结果到 CSV 文件",
     )
     scan_parser.add_argument(
+        "-g", "--group",
+        help="分组配置文件路径，每行格式：路径前缀 = 团队名称",
+    )
+    scan_parser.add_argument(
         "--no-color",
         action="store_true",
         help="禁用彩色输出",
@@ -253,8 +257,74 @@ def _build_parser() -> argparse.ArgumentParser:
         "--csv-out",
         help="导出机器可读结果到 CSV 文件",
     )
+    demo_parser.add_argument(
+        "-g", "--group",
+        help="分组配置文件路径，每行格式：路径前缀 = 团队名称",
+    )
+
+    diff_parser = subparsers.add_parser("diff", help="对比两次扫描结果的趋势变化")
+    diff_parser.add_argument(
+        "old_json",
+        help="旧扫描结果 JSON 文件路径",
+    )
+    diff_parser.add_argument(
+        "new_json",
+        help="新扫描结果 JSON 文件路径",
+    )
+    diff_parser.add_argument(
+        "-s", "--severity",
+        action="append",
+        default=None,
+        help="按严重级别筛选，可多次指定，例如 -s HIGH -s MEDIUM",
+    )
+    diff_parser.add_argument(
+        "-o", "--report",
+        help="输出对比报告到指定文件",
+    )
+    diff_parser.add_argument(
+        "--no-color",
+        action="store_true",
+        help="禁用彩色输出",
+    )
 
     return parser
+
+
+def _parse_group_config(group_file: Optional[str]) -> Dict[str, str]:
+    if not group_file:
+        return {}
+    groups = {}
+    with open(group_file, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" not in line:
+                continue
+            prefix, name = line.split("=", 1)
+            groups[prefix.strip()] = name.strip()
+    return groups
+
+
+def _get_group(path: str, groups: Dict[str, str]) -> str:
+    if not groups:
+        return "其他"
+    for prefix, name in groups.items():
+        if path.startswith(prefix):
+            return name
+    return "其他"
+
+
+def _group_violations(
+    violations: List[RuleViolation], groups: Dict[str, str]
+) -> Dict[str, List[RuleViolation]]:
+    result: Dict[str, List[RuleViolation]] = {}
+    for v in violations:
+        group = _get_group(v.item_path, groups)
+        if group not in result:
+            result[group] = []
+        result[group].append(v)
+    return result
 
 
 def _cmd_list_rules(args: argparse.Namespace):
@@ -301,7 +371,7 @@ def _build_recheck_cmd(
     severity_filter: Optional[List[str]],
     ignore_file: Optional[str],
 ) -> str:
-    parts = ["share-audit", "scan"]
+    parts = ["python", "share_audit.py", "scan"]
     if data_file:
         parts.extend(["-d", _shell_quote(data_file)])
     if domains:
@@ -425,69 +495,117 @@ def _write_csv_output(
     errors: List[str],
 ) -> None:
     rows = []
-    for v in violations:
-        rows.append({
-            "type": "violation",
-            "severity": v.severity.value,
-            "rule_id": v.rule_id,
-            "rule_name": v.rule_name,
-            "item_path": v.item_path,
-            "item_name": v.item_name,
-            "member_email": v.member.email if v.member else "",
-            "member_permission": v.member.permission.value if v.member else "",
-            "description": v.description,
-            "suggestion": v.suggestion,
-            "recheck_cmd": v.recheck_cmd,
-            "ignored": "false",
-        })
-    for v in ignored_violations:
-        rows.append({
-            "type": "violation",
-            "severity": v.severity.value,
-            "rule_id": v.rule_id,
-            "rule_name": v.rule_name,
-            "item_path": v.item_path,
-            "item_name": v.item_name,
-            "member_email": v.member.email if v.member else "",
-            "member_permission": v.member.permission.value if v.member else "",
-            "description": v.description,
-            "suggestion": v.suggestion,
-            "recheck_cmd": v.recheck_cmd,
-            "ignored": "true",
-        })
+    all_violations = violations + ignored_violations
+
+    for item in items:
+        for member in item.members:
+            member_violations = [
+                v for v in all_violations
+                if v.member and v.member.email == member.email and v.item_path == item.path
+            ]
+            is_ignored_list = [v in ignored_violations for v in member_violations]
+
+            base_row = {
+                "type": "member",
+                "item_id": item.id,
+                "item_name": item.name,
+                "item_path": item.path,
+                "item_type": item.item_type,
+                "item_link": item.link or "",
+                "member_name": member.name,
+                "member_email": member.email,
+                "member_type": member.member_type.value,
+                "permission": member.permission.value,
+                "can_reshare": "true" if member.can_reshare else "false",
+                "expiry": member.expiry.strftime("%Y-%m-%d") if member.expiry else "",
+                "has_violation": "true" if member_violations else "false",
+                "violation_count": len([v for v in member_violations if v not in ignored_violations]),
+                "ignored_count": len([v for v in member_violations if v in ignored_violations]),
+            }
+
+            if not member_violations:
+                base_row.update({
+                    "rule_id": "",
+                    "rule_name": "",
+                    "severity": "",
+                    "description": "",
+                    "suggestion": "",
+                    "recheck_cmd": "",
+                    "ignored": "",
+                })
+                rows.append(base_row)
+            else:
+                for v, ignored in zip(member_violations, is_ignored_list):
+                    row = base_row.copy()
+                    row.update({
+                        "type": "violation",
+                        "rule_id": v.rule_id,
+                        "rule_name": v.rule_name,
+                        "severity": v.severity.value,
+                        "description": v.description,
+                        "suggestion": v.suggestion,
+                        "recheck_cmd": v.recheck_cmd,
+                        "ignored": "true" if ignored else "false",
+                    })
+                    rows.append(row)
+
     for nf in not_found:
         rows.append({
             "type": "not_found",
-            "severity": "",
+            "item_id": "",
+            "item_name": "",
+            "item_path": nf,
+            "item_type": "",
+            "item_link": "",
+            "member_name": "",
+            "member_email": "",
+            "member_type": "",
+            "permission": "",
+            "can_reshare": "",
+            "expiry": "",
+            "has_violation": "",
+            "violation_count": "",
+            "ignored_count": "",
             "rule_id": "",
             "rule_name": "",
-            "item_path": nf,
-            "item_name": "",
-            "member_email": "",
-            "member_permission": "",
+            "severity": "",
             "description": "未在数据源中找到该目标",
             "suggestion": "核对路径/链接拼写或重新导出数据源",
             "recheck_cmd": "",
             "ignored": "",
         })
+
     for e in errors:
         rows.append({
             "type": "error",
-            "severity": "",
+            "item_id": "",
+            "item_name": "",
+            "item_path": "",
+            "item_type": "",
+            "item_link": "",
+            "member_name": "",
+            "member_email": "",
+            "member_type": "",
+            "permission": "",
+            "can_reshare": "",
+            "expiry": "",
+            "has_violation": "",
+            "violation_count": "",
+            "ignored_count": "",
             "rule_id": "",
             "rule_name": "",
-            "item_path": "",
-            "item_name": "",
-            "member_email": "",
-            "member_permission": "",
+            "severity": "",
             "description": e,
             "suggestion": "",
             "recheck_cmd": "",
             "ignored": "",
         })
+
     fieldnames = [
-        "type", "severity", "rule_id", "rule_name", "item_path", "item_name",
-        "member_email", "member_permission", "description", "suggestion", "recheck_cmd", "ignored",
+        "type", "item_id", "item_name", "item_path", "item_type", "item_link",
+        "member_name", "member_email", "member_type", "permission", "can_reshare", "expiry",
+        "has_violation", "violation_count", "ignored_count",
+        "rule_id", "rule_name", "severity", "description", "suggestion", "recheck_cmd", "ignored",
     ]
     with open(path, "w", encoding="utf-8-sig", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -564,6 +682,7 @@ def _run_audit(
     ignore_file: Optional[str] = None,
     json_out: Optional[str] = None,
     csv_out: Optional[str] = None,
+    group_config: Optional[Dict[str, str]] = None,
 ) -> int:
     scanner = Scanner(provider, recursive=recursive)
     scan_results = scanner.scan(targets)
@@ -632,9 +751,13 @@ def _run_audit(
 
     seen_paths = set()
     for item in all_items:
-        if item.path not in seen_paths:
-            _print_item_table(item, filtered_violations + ignored_violations)
-            seen_paths.add(item.path)
+        if item.path in seen_paths:
+            continue
+        item_filtered = [v for v in filtered_violations if v.item_path == item.path]
+        if severity_filter and not item_filtered:
+            continue
+        _print_item_table(item, filtered_violations)
+        seen_paths.add(item.path)
 
     if ignored_violations:
         print()
@@ -649,6 +772,19 @@ def _run_audit(
 
     _print_violation_summary(filtered_violations)
 
+    if group_config:
+        grouped = _group_violations(filtered_violations, group_config)
+        ignored_grouped = _group_violations(ignored_violations, group_config)
+        print()
+        print(f"  {Fore.BLUE}{Style.BRIGHT}按团队分组统计:{Style.RESET_ALL}")
+        for group_name in sorted(grouped.keys()):
+            g_violations = grouped[group_name]
+            g_high = sum(1 for v in g_violations if v.severity == Severity.HIGH)
+            g_med = sum(1 for v in g_violations if v.severity == Severity.MEDIUM)
+            g_low = sum(1 for v in g_violations if v.severity == Severity.LOW)
+            g_ignored = len(ignored_grouped.get(group_name, []))
+            print(f"    {Fore.BLUE}• {group_name}:{Style.RESET_ALL} HIGH={g_high} MEDIUM={g_med} LOW={g_low}  已忽略={g_ignored}")
+
     if report_path:
         rep = ReportGenerator()
         rep.generate(
@@ -656,6 +792,7 @@ def _run_audit(
             output_path=report_path,
             ignored_violations=ignored_violations,
             not_found_targets=all_not_found,
+            group_config=group_config,
         )
         print()
         print(f"  {Fore.GREEN}文本报告已生成: {report_path}{Style.RESET_ALL}")
@@ -696,6 +833,8 @@ def _cmd_scan(args: argparse.Namespace):
         print(f"{Fore.RED}数据源加载失败: {exc}{Style.RESET_ALL}")
         return 2
 
+    group_config = _parse_group_config(args.group)
+
     return _run_audit(
         targets,
         provider,
@@ -707,6 +846,7 @@ def _cmd_scan(args: argparse.Namespace):
         ignore_file=args.ignore,
         json_out=args.json_out,
         csv_out=args.csv_out,
+        group_config=group_config if group_config else None,
     )
 
 
@@ -731,6 +871,8 @@ def _cmd_demo(args: argparse.Namespace):
         print(f"{Fore.RED}数据源加载失败: {exc}{Style.RESET_ALL}")
         return 2
 
+    group_config = _parse_group_config(args.group)
+
     return _run_audit(
         targets,
         provider,
@@ -742,7 +884,58 @@ def _cmd_demo(args: argparse.Namespace):
         ignore_file=args.ignore,
         json_out=args.json_out,
         csv_out=args.csv_out,
+        group_config=group_config if group_config else None,
     )
+
+
+def _cmd_diff(args: argparse.Namespace):
+    if not args.no_color:
+        _init_colorama()
+
+    from .diff import compare_json_files, ChangeType
+
+    print()
+    print(f"  {Fore.BLUE}{Style.BRIGHT}=== 共享权限巡检趋势对比 ==={Style.RESET_ALL}")
+    print()
+
+    try:
+        diff_result = compare_json_files(args.old_json, args.new_json, args.severity)
+    except (FileNotFoundError, json.JSONDecodeError) as exc:
+        print(f"  {Fore.RED}读取扫描结果失败: {exc}{Style.RESET_ALL}")
+        return 2
+
+    s = diff_result.summary
+    print(f"  {Fore.BLUE}旧扫描:{Style.RESET_ALL} {diff_result.old_file}  ({diff_result.old_generated_at})")
+    print(f"  {Fore.BLUE}新扫描:{Style.RESET_ALL} {diff_result.new_file}  ({diff_result.new_generated_at})")
+    print()
+    print(f"  {Fore.BLUE}变化汇总:{Style.RESET_ALL}")
+    print(f"    {Fore.GREEN}+ 新增:{Style.RESET_ALL} HIGH={s['new']['HIGH']} MEDIUM={s['new']['MEDIUM']} LOW={s['new']['LOW']} TOTAL={s['new']['TOTAL']}")
+    print(f"    {Fore.CYAN}- 已修复:{Style.RESET_ALL} HIGH={s['fixed']['HIGH']} MEDIUM={s['fixed']['MEDIUM']} LOW={s['fixed']['LOW']} TOTAL={s['fixed']['TOTAL']}")
+    print(f"    {Fore.YELLOW}• 仍存在:{Style.RESET_ALL} HIGH={s['existing']['HIGH']} MEDIUM={s['existing']['MEDIUM']} LOW={s['existing']['LOW']} TOTAL={s['existing']['TOTAL']}")
+
+    sections = [
+        (diff_result.new_violations, ChangeType.NEW, Fore.GREEN, "+ 新增风险"),
+        (diff_result.fixed_violations, ChangeType.FIXED, Fore.CYAN, "- 已修复"),
+        (diff_result.existing_violations, ChangeType.EXISTING, Fore.YELLOW, "• 仍存在"),
+    ]
+
+    for violations, change_type, color, title in sections:
+        if not violations:
+            continue
+        print()
+        print(f"  {color}{Style.BRIGHT}{title}（{len(violations)} 条）{Style.RESET_ALL}")
+        for idx, v in enumerate(violations, 1):
+            member_info = f" ({v.member_email})" if v.member_email else ""
+            print(f"    {color}{idx:>3}.{Style.RESET_ALL} [{v.severity.value}] {v.rule_name}  {v.item_path}{member_info}")
+
+    if args.report:
+        from .report import ReportGenerator
+        generator = ReportGenerator()
+        report = generator.generate_diff_report(diff_result, output_path=args.report)
+        print()
+        print(f"  {Fore.GREEN}对比报告已导出: {args.report}{Style.RESET_ALL}")
+
+    return 1 if s["new"]["TOTAL"] > 0 else 0
 
 
 def audit_main(argv: Optional[List[str]] = None) -> int:
@@ -755,6 +948,8 @@ def audit_main(argv: Optional[List[str]] = None) -> int:
         return _cmd_list_rules(args)
     elif args.command == "demo":
         return _cmd_demo(args)
+    elif args.command == "diff":
+        return _cmd_diff(args)
     else:
         parser.print_help()
         return 1
