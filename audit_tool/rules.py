@@ -1,4 +1,4 @@
-from typing import Callable, List
+from typing import Callable, List, Optional
 
 from .models import (
     Member,
@@ -13,12 +13,13 @@ from .models import (
 RuleFn = Callable[[SharedItem, Member], List[RuleViolation]]
 
 
-def is_external_email(email: str) -> bool:
-    internal_domains = ["company.com"]
+def _is_external_email(email: str, company_domains: Optional[List[str]] = None) -> bool:
+    if not company_domains:
+        return False
     if "@" not in email:
         return False
     domain = email.split("@")[-1].lower()
-    return domain not in internal_domains
+    return domain not in [d.lower() for d in company_domains]
 
 
 def _base_violation(
@@ -68,34 +69,36 @@ def rule_anyone_view(item: SharedItem, member: Member) -> List[RuleViolation]:
     return []
 
 
-def rule_external_edit(item: SharedItem, member: Member) -> List[RuleViolation]:
-    if member.member_type == MemberType.EXTERNAL and member.permission in (
-        PermissionLevel.EDIT,
-        PermissionLevel.OWNER,
-    ):
-        return [_base_violation(
-            rule_id="R002",
-            rule_name="外部用户可编辑",
-            severity=Severity.HIGH,
-            item=item,
-            member=member,
-            description=f"外部用户 {member.email} 拥有【{member.permission.value}】权限",
-            suggestion="降为查看权限或移除用户，必要时设定期限并开启二次验证",
-        )]
-    if is_external_email(member.email) and member.permission in (
-        PermissionLevel.EDIT,
-        PermissionLevel.OWNER,
-    ):
-        return [_base_violation(
-            rule_id="R002",
-            rule_name="外部邮箱可编辑",
-            severity=Severity.HIGH,
-            item=item,
-            member=member,
-            description=f"外部邮箱 {member.email} 拥有【{member.permission.value}】权限",
-            suggestion="核查是否为外包/外包账号，降权或添加有效期限制",
-        )]
-    return []
+def make_rule_external_edit(company_domains: Optional[List[str]] = None) -> RuleFn:
+    def rule_external_edit(item: SharedItem, member: Member) -> List[RuleViolation]:
+        if member.member_type == MemberType.EXTERNAL and member.permission in (
+            PermissionLevel.EDIT,
+            PermissionLevel.OWNER,
+        ):
+            return [_base_violation(
+                rule_id="R002",
+                rule_name="外部用户可编辑",
+                severity=Severity.HIGH,
+                item=item,
+                member=member,
+                description=f"外部用户 {member.email} 拥有【{member.permission.value}】权限",
+                suggestion="降为查看权限或移除用户，必要时设定期限并开启二次验证",
+            )]
+        if company_domains and _is_external_email(member.email, company_domains) and member.permission in (
+            PermissionLevel.EDIT,
+            PermissionLevel.OWNER,
+        ):
+            return [_base_violation(
+                rule_id="R002",
+                rule_name="外部邮箱可编辑",
+                severity=Severity.HIGH,
+                item=item,
+                member=member,
+                description=f"外部邮箱 {member.email} 拥有【{member.permission.value}】权限",
+                suggestion="核查是否为外包/外包账号，降权或添加有效期限制",
+            )]
+        return []
+    return rule_external_edit
 
 
 def rule_no_expiry(item: SharedItem, member: Member) -> List[RuleViolation]:
@@ -135,17 +138,25 @@ def rule_reshare_enabled(item: SharedItem, member: Member) -> List[RuleViolation
     return []
 
 
-DEFAULT_RULES: List[RuleFn] = [
-    rule_anyone_view,
-    rule_external_edit,
-    rule_no_expiry,
-    rule_reshare_enabled,
-]
+def _build_default_rules(company_domains: Optional[List[str]] = None) -> List[RuleFn]:
+    return [
+        rule_anyone_view,
+        make_rule_external_edit(company_domains),
+        rule_no_expiry,
+        rule_reshare_enabled,
+    ]
+
+
+DEFAULT_RULES: List[RuleFn] = _build_default_rules()
 
 
 class RuleEngine:
-    def __init__(self, rules: List[RuleFn] = None):
-        self.rules = rules if rules is not None else DEFAULT_RULES
+    def __init__(self, rules: List[RuleFn] = None, company_domains: Optional[List[str]] = None):
+        self.company_domains = company_domains or []
+        if rules is not None:
+            self.rules = rules
+        else:
+            self.rules = _build_default_rules(company_domains)
 
     def check(self, items: List[SharedItem]) -> List[RuleViolation]:
         violations: List[RuleViolation] = []

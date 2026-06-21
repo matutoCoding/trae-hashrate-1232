@@ -1,0 +1,15 @@
+# 每周安全巡检 - 共享对象扫描清单
+# 每行一个目标：团队空间路径、项目目录、共享链接均可
+# 建议每周从云盘后台导出最新数据源 JSON/CSV 后运行本工具
+
+# === 研发部 ===
+/spaces/rnd-public
+/spaces/rnd/projects/secret-algo
+https://drive.acme.cn/s/algo-secret-v3
+
+# === 市场部 ===
+/spaces/marketing/campaigns/q3-2026
+
+# === 这个对象不在数据源里（用于演示未找到目标提示）===
+/spaces/operations/board-minutes
+https://drive.acme.cn/s/not-exist-link-xyz

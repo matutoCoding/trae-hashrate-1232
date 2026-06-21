@@ -7,7 +7,7 @@ from .models import (
     Severity,
     RuleViolation,
 )
-from .data_provider import DataProvider, MockDataProvider
+from .data_provider import DataProvider, MockDataProvider, FileDataProvider
 from .scanner import Scanner
 from .rules import RuleEngine
 from .report import ReportGenerator

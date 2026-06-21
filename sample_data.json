@@ -1,0 +1,94 @@
+{
+  "company_domains": ["acme-corp.com", "acme.cn"],
+  "items": [
+    {
+      "id": "space-rnd",
+      "name": "研发部公共资料",
+      "path": "/spaces/rnd-public",
+      "item_type": "space",
+      "link": "https://drive.acme.cn/s/rnd-public-2025",
+      "created_at": "2025-03-15",
+      "updated_at": "2026-06-10",
+      "members": [
+        {
+          "name": "研发全员",
+          "email": "rnd-all@acme-corp.com",
+          "member_type": "group",
+          "permission": "edit",
+          "can_reshare": true,
+          "expiry": ""
+        },
+        {
+          "name": "任何人",
+          "email": "anyone",
+          "member_type": "anyone",
+          "permission": "view",
+          "can_reshare": true,
+          "expiry": ""
+        }
+      ]
+    },
+    {
+      "id": "proj-secret-algo",
+      "name": "核心算法源码仓库",
+      "path": "/spaces/rnd/projects/secret-algo",
+      "item_type": "folder",
+      "link": "https://drive.acme.cn/s/algo-secret-v3",
+      "created_at": "2026-01-08",
+      "updated_at": "2026-06-20",
+      "members": [
+        {
+          "name": "王算法",
+          "email": "wang.alg@acme-corp.com",
+          "member_type": "user",
+          "permission": "owner",
+          "can_reshare": true,
+          "expiry": ""
+        },
+        {
+          "name": "外包顾问 Tom",
+          "email": "tom.consultant@external-ai-lab.com",
+          "member_type": "external",
+          "permission": "edit",
+          "can_reshare": false,
+          "expiry": ""
+        }
+      ]
+    },
+    {
+      "id": "proj-market-2026",
+      "name": "2026 Q3 市场投放方案",
+      "path": "/spaces/marketing/campaigns/q3-2026",
+      "item_type": "folder",
+      "link": "",
+      "created_at": "2026-05-01",
+      "updated_at": "2026-06-18",
+      "members": [
+        {
+          "name": "市场组",
+          "email": "mkt-all@acme-corp.com",
+          "member_type": "group",
+          "permission": "edit",
+          "can_reshare": false,
+          "expiry": "2026-09-30"
+        },
+        {
+          "name": "设计组",
+          "email": "design@acme-corp.com",
+          "member_type": "group",
+          "permission": "comment",
+          "can_reshare": false,
+          "expiry": ""
+        },
+        {
+          "name": "外部媒体代理",
+          "email": "media-partner@4a-agency.cn",
+          "member_type": "external",
+          "permission": "view",
+          "can_reshare": true,
+          "expiry": ""
+        }
+      ]
+    }
+  ]
+}

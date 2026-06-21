@@ -6,7 +6,7 @@ from typing import List, Optional
 from colorama import Fore, Style, init as colorama_init
 from tabulate import tabulate
 
-from .data_provider import DataProvider, MockDataProvider
+from .data_provider import DataProvider, MockDataProvider, FileDataProvider
 from .models import (
     Member,
     MemberType,
@@ -157,6 +157,16 @@ def _build_parser() -> argparse.ArgumentParser:
         help="从指定文件读取扫描目标列表（每行一个，可多次指定）",
     )
     scan_parser.add_argument(
+        "-d", "--data",
+        help="数据源文件路径（.json 或 .csv），从管理员导出的真实清单读取共享对象数据",
+    )
+    scan_parser.add_argument(
+        "--domain",
+        action="append",
+        default=[],
+        help="公司内网域名，用于自动识别外部邮箱，可多次指定，例如 --domain company.com",
+    )
+    scan_parser.add_argument(
         "-r", "--recursive",
         action="store_true",
         help="递归扫描子目录",
@@ -184,6 +194,16 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     demo_parser = subparsers.add_parser("demo", help="运行演示扫描")
+    demo_parser.add_argument(
+        "-d", "--data",
+        help="数据源文件路径（.json 或 .csv），覆盖默认演示数据",
+    )
+    demo_parser.add_argument(
+        "--domain",
+        action="append",
+        default=[],
+        help="公司内网域名，用于自动识别外部邮箱，可多次指定",
+    )
     demo_parser.add_argument(
         "-o", "--report",
         help="输出文本报告到指定文件",
@@ -222,15 +242,25 @@ def _cmd_list_rules(args: argparse.Namespace):
     print()
 
 
+def _build_provider(data_file: Optional[str], domains: Optional[List[str]]) -> DataProvider:
+    if data_file:
+        return FileDataProvider(data_file, company_domains=domains or None)
+    return MockDataProvider()
+
+
 def _run_audit(
     targets: List[ScanTarget],
     provider: DataProvider,
     recursive: bool,
     report_path: Optional[str],
+    company_domains: Optional[List[str]] = None,
 ) -> int:
     scanner = Scanner(provider, recursive=recursive)
     scan_results = scanner.scan(targets)
-    rule_engine = RuleEngine()
+
+    if company_domains is None:
+        company_domains = getattr(provider, "company_domains", None) or []
+    rule_engine = RuleEngine(company_domains=company_domains)
 
     all_items: List[SharedItem] = []
     seen_ids = set()
@@ -245,7 +275,13 @@ def _run_audit(
         all_errors.extend(sr.errors)
         all_not_found.extend(sr.not_found)
 
-    all_violations = rule_engine.check(all_items)
+    total_targets = len(targets)
+    matched_targets = total_targets - len(all_errors) - len(all_not_found)
+    provider_name = getattr(provider, "file_path", "(内置演示数据)")
+    item_count = getattr(provider, "item_count", "?")
+    print()
+    print(f"  {Fore.BLUE}数据源:{Style.RESET_ALL} {provider_name}  共 {item_count} 个共享对象")
+    print(f"  {Fore.BLUE}扫描目标:{Style.RESET_ALL} {total_targets} 个  命中 {matched_targets}  未找到 {len(all_not_found)}  错误 {len(all_errors)}")
 
     if all_errors:
         print()
@@ -254,13 +290,16 @@ def _run_audit(
 
     if all_not_found:
         print()
+        print(f"  {Fore.YELLOW}[未找到目标]{Style.RESET_ALL} 以下目标在数据源中不存在，请核对路径/链接拼写或重新导出：")
         for nf in all_not_found:
-            print(f"  {Fore.YELLOW}[警告] 未找到: {nf}{Style.RESET_ALL}")
+            print(f"    • {nf}")
 
     if not all_items:
         print()
         print(f"  {Fore.RED}未扫描到任何共享对象{Style.RESET_ALL}")
         return 1
+
+    all_violations = rule_engine.check(all_items)
 
     seen_paths = set()
     for item in all_items:
@@ -290,11 +329,16 @@ def _cmd_scan(args: argparse.Namespace):
 
     targets = parse_targets_from_args(all_raw_targets)
     if not targets:
-        print(f"{Fore.RED}未提供有效的扫描目标{Style.RESET_ALL}")
+        print(f"{Fore.RED}未提供有效的扫描目标。使用 -f 指定目标清单或直接传入路径/共享链接{Style.RESET_ALL}")
         return 1
 
-    provider = MockDataProvider()
-    return _run_audit(targets, provider, args.recursive, args.report)
+    try:
+        provider = _build_provider(args.data, args.domain)
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"{Fore.RED}数据源加载失败: {exc}{Style.RESET_ALL}")
+        return 2
+
+    return _run_audit(targets, provider, args.recursive, args.report, company_domains=args.domain)
 
 
 def _cmd_demo(args: argparse.Namespace):
@@ -312,8 +356,13 @@ def _cmd_demo(args: argparse.Namespace):
 
     targets = [ScanTarget(raw=t, target_type="path" if t.startswith("/") else "link", value=t) for t in demo_targets]
 
-    provider = MockDataProvider()
-    return _run_audit(targets, provider, recursive=True, report_path=args.report)
+    try:
+        provider = _build_provider(args.data, args.domain)
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"{Fore.RED}数据源加载失败: {exc}{Style.RESET_ALL}")
+        return 2
+
+    return _run_audit(targets, provider, recursive=True, report_path=args.report, company_domains=args.domain)
 
 
 def audit_main(argv: Optional[List[str]] = None) -> int:
