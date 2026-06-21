@@ -1,0 +1,227 @@
+{
+  "generated_at": "2026-06-22 02:25:03",
+  "data_source": "sample_data.json",
+  "company_domains": [
+    "acme-corp.com"
+  ],
+  "severity_filter": [
+    "HIGH"
+  ],
+  "summary": {
+    "total_items": 3,
+    "active_violations": 2,
+    "ignored_violations": 3,
+    "high": 2,
+    "medium": 0,
+    "low": 0,
+    "not_found_targets": 2,
+    "errors": 0
+  },
+  "items": [
+    {
+      "id": "space-rnd",
+      "name": "研发部公共资料",
+      "path": "/spaces/rnd-public",
+      "item_type": "space",
+      "link": "https://drive.acme.cn/s/rnd-public-2025",
+      "members": [
+        {
+          "name": "研发全员",
+          "email": "rnd-all@acme-corp.com",
+          "member_type": "group",
+          "permission": "edit",
+          "can_reshare": true,
+          "expiry": null,
+          "violations": [
+            {
+              "rule_id": "R003",
+              "rule_name": "权限未设到期时间",
+              "severity": "MEDIUM",
+              "ignored": true
+            }
+          ]
+        },
+        {
+          "name": "任何人",
+          "email": "anyone",
+          "member_type": "anyone",
+          "permission": "view",
+          "can_reshare": true,
+          "expiry": null,
+          "violations": [
+            {
+              "rule_id": "R001",
+              "rule_name": "任何人可访问",
+              "severity": "HIGH",
+              "ignored": false
+            }
+          ]
+        }
+      ],
+      "violation_count": 1,
+      "ignored_count": 1
+    },
+    {
+      "id": "proj-secret-algo",
+      "name": "核心算法源码仓库",
+      "path": "/spaces/rnd/projects/secret-algo",
+      "item_type": "folder",
+      "link": "https://drive.acme.cn/s/algo-secret-v3",
+      "members": [
+        {
+          "name": "王算法",
+          "email": "wang.alg@acme-corp.com",
+          "member_type": "user",
+          "permission": "owner",
+          "can_reshare": true,
+          "expiry": null,
+          "violations": []
+        },
+        {
+          "name": "外包顾问 Tom",
+          "email": "tom.consultant@external-ai-lab.com",
+          "member_type": "external",
+          "permission": "edit",
+          "can_reshare": false,
+          "expiry": null,
+          "violations": [
+            {
+              "rule_id": "R002",
+              "rule_name": "外部用户可编辑",
+              "severity": "HIGH",
+              "ignored": false
+            }
+          ]
+        }
+      ],
+      "violation_count": 1,
+      "ignored_count": 0
+    },
+    {
+      "id": "proj-market-2026",
+      "name": "2026 Q3 市场投放方案",
+      "path": "/spaces/marketing/campaigns/q3-2026",
+      "item_type": "folder",
+      "link": null,
+      "members": [
+        {
+          "name": "市场组",
+          "email": "mkt-all@acme-corp.com",
+          "member_type": "group",
+          "permission": "edit",
+          "can_reshare": false,
+          "expiry": "2026-09-30 00:00:00",
+          "violations": []
+        },
+        {
+          "name": "设计组",
+          "email": "design@acme-corp.com",
+          "member_type": "group",
+          "permission": "comment",
+          "can_reshare": false,
+          "expiry": null,
+          "violations": [
+            {
+              "rule_id": "R003",
+              "rule_name": "权限未设到期时间",
+              "severity": "MEDIUM",
+              "ignored": true
+            }
+          ]
+        },
+        {
+          "name": "外部媒体代理",
+          "email": "media-partner@4a-agency.cn",
+          "member_type": "external",
+          "permission": "view",
+          "can_reshare": true,
+          "expiry": null,
+          "violations": [
+            {
+              "rule_id": "R004",
+              "rule_name": "允许转分享",
+              "severity": "MEDIUM",
+              "ignored": true
+            }
+          ]
+        }
+      ],
+      "violation_count": 0,
+      "ignored_count": 2
+    }
+  ],
+  "violations": [
+    {
+      "rule_id": "R001",
+      "rule_name": "任何人可访问",
+      "severity": "HIGH",
+      "item_name": "研发部公共资料",
+      "item_path": "/spaces/rnd-public",
+      "member_email": "anyone",
+      "member_permission": "view",
+      "description": "对象对任何人开放【view】权限",
+      "suggestion": "立即关闭公开访问，改为指定内部用户或设置访问白名单",
+      "recheck_cmd": "python share_audit.py scan -d sample_data.json --domain acme-corp.com -r -s HIGH -i ignore_baseline.txt https://drive.acme.cn/s/rnd-public-2025",
+      "ignored": false
+    },
+    {
+      "rule_id": "R002",
+      "rule_name": "外部用户可编辑",
+      "severity": "HIGH",
+      "item_name": "核心算法源码仓库",
+      "item_path": "/spaces/rnd/projects/secret-algo",
+      "member_email": "tom.consultant@external-ai-lab.com",
+      "member_permission": "edit",
+      "description": "外部用户 tom.consultant@external-ai-lab.com 拥有【edit】权限",
+      "suggestion": "降为查看权限或移除用户，必要时设定期限并开启二次验证",
+      "recheck_cmd": "python share_audit.py scan -d sample_data.json --domain acme-corp.com -r -s HIGH -i ignore_baseline.txt https://drive.acme.cn/s/algo-secret-v3",
+      "ignored": false
+    }
+  ],
+  "ignored_violations": [
+    {
+      "rule_id": "R003",
+      "rule_name": "权限未设到期时间",
+      "severity": "MEDIUM",
+      "item_name": "研发部公共资料",
+      "item_path": "/spaces/rnd-public",
+      "member_email": "rnd-all@acme-corp.com",
+      "member_permission": "edit",
+      "description": "用户 rnd-all@acme-corp.com 的【edit】权限无到期时间",
+      "suggestion": "根据项目周期设置合理的到期时间，例如 90 天内",
+      "recheck_cmd": "python share_audit.py scan -d sample_data.json --domain acme-corp.com -r -s HIGH -i ignore_baseline.txt https://drive.acme.cn/s/rnd-public-2025",
+      "ignored": true
+    },
+    {
+      "rule_id": "R003",
+      "rule_name": "权限未设到期时间",
+      "severity": "MEDIUM",
+      "item_name": "2026 Q3 市场投放方案",
+      "item_path": "/spaces/marketing/campaigns/q3-2026",
+      "member_email": "design@acme-corp.com",
+      "member_permission": "comment",
+      "description": "用户 design@acme-corp.com 的【comment】权限无到期时间",
+      "suggestion": "根据项目周期设置合理的到期时间，例如 90 天内",
+      "recheck_cmd": "python share_audit.py scan -d sample_data.json --domain acme-corp.com -r -s HIGH -i ignore_baseline.txt /spaces/marketing/campaigns/q3-2026",
+      "ignored": true
+    },
+    {
+      "rule_id": "R004",
+      "rule_name": "允许转分享",
+      "severity": "MEDIUM",
+      "item_name": "2026 Q3 市场投放方案",
+      "item_path": "/spaces/marketing/campaigns/q3-2026",
+      "member_email": "media-partner@4a-agency.cn",
+      "member_permission": "view",
+      "description": "media-partner@4a-agency.cn 拥有【view】且允许转分享",
+      "suggestion": "关闭转分享权限，防止权限扩散",
+      "recheck_cmd": "python share_audit.py scan -d sample_data.json --domain acme-corp.com -r -s HIGH -i ignore_baseline.txt /spaces/marketing/campaigns/q3-2026",
+      "ignored": true
+    }
+  ],
+  "not_found_targets": [
+    "/spaces/operations/board-minutes",
+    "https://drive.acme.cn/s/not-exist-link-xyz"
+  ],
+  "errors": []
+}

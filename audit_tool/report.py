@@ -112,10 +112,13 @@ class ReportGenerator:
     def _get_group(self, path: str, groups: Dict[str, str]) -> str:
         if not groups:
             return "其他"
+        best_prefix = ""
+        best_name = "其他"
         for prefix, name in groups.items():
-            if path.startswith(prefix):
-                return name
-        return "其他"
+            if path.startswith(prefix) and len(prefix) > len(best_prefix):
+                best_prefix = prefix
+                best_name = name
+        return best_name
 
     def _group_violations(
         self, violations: List[RuleViolation], groups: Dict[str, str]

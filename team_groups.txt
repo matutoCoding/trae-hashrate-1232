@@ -1,9 +1,9 @@
 # 团队目录前缀映射配置
 # 格式：路径前缀 = 团队名称
-# 按最长前缀匹配，因此更具体的路径应该写在前面
+# 匹配规则：自动按最长前缀优先，无论书写顺序
 
-/spaces/rnd/projects/secret-algo = 研发-算法组
 /spaces/rnd = 研发团队
+/spaces/rnd/projects/secret-algo = 研发-算法组
 /spaces/marketing = 市场团队
 /spaces/fin = 财务团队
 /spaces/hr = 人力资源
